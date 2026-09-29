@@ -1,0 +1,9 @@
+# 构建产物
+ClaudeMeter.app/
+ClaudeMeter
+*.o
+*.dSYM/
+
+# macOS
+.DS_Store
+._*
