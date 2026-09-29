@@ -81,6 +81,12 @@ App 是本地编译的（未签名、未公证），macOS 的 `SMAppService` 不
 ./build.sh --install
 ```
 
+顶部那张预览图由 `tools/make-preview.swift` 生成 —— 竖条是**矢量直接绘制**（不是缩放位图），按 2x 输出，所以在 retina 屏上边缘是锐利的：
+
+```bash
+swift tools/make-preview.swift docs/bar-preview.png
+```
+
 ## 实现说明
 
 - 用量来自 claude.ai 的内部接口 `GET /api/organizations/{orgId}/usage`（**非公开、未文档化**，随时可能变）
