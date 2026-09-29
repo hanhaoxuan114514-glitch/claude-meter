@@ -94,6 +94,27 @@ App 是本地编译的（未签名、未公证），macOS 的 `SMAppService` 不
 - `sessionKey` 有效期约 30 天，过期后竖条会变成空底槽（面板里会说明原因），需要重新配置
 - 未签名、未公证；因为本地编译不会带隔离标记，通常可以直接打开
 
+## 致谢与先例
+
+「在菜单栏里看 Claude 额度」这个思路不是本项目首创的。动手前我调研过下面几个项目，它们各自解决过同一个问题：
+
+| 项目 | 协议 | 对本项目的意义 |
+|---|---|---|
+| [steipete/CodexBar](https://github.com/steipete/CodexBar) | MIT | 最早让我知道 claude.ai 的网页会话可以用来查额度 |
+| [Artzainnn/ClaudeUsageBar](https://github.com/Artzainnn/ClaudeUsageBar) | MIT | 印证了「用 cookie 查 claude.ai 用量」这条路可行 |
+| [Four-JJJJ/oh-myusage](https://github.com/Four-JJJJ/oh-myusage) | MIT | 中文界面 + 多 provider 的完整参考实现 |
+| [linuxlewis/claude-usage](https://github.com/linuxlewis/claude-usage) | 未声明 | 我读过它的源码来定位一个解码 bug，并从中了解了这个接口的请求形态 |
+
+**关于代码来源**：早期版本的请求头和 `resets_at` 时间解析受 linuxlewis/claude-usage 影响较大。当前版本已把那两处**重写为独立实现**：
+
+- 请求头是实测精简的结果 —— 实测表明该接口只需要会话 cookie，`accept` / `content-type` 之类都是多余的
+- 时间解析不再反复试不同 formatter，而是丢掉小数秒后单次解析
+- 钥匙串读取改成一个通用的 `keychainString(service:account:)` 函数
+
+其余部分（竖条绘制、刷新调度、面板 UI、构建与自启动脚本）为原创。**没有复制粘贴任何项目的代码。**
+
+需要说明的是上表中的 linuxlewis/claude-usage 未声明开源协议，本项目不沿用其任何代码 —— 列出它只是为说明技术脉络，并感谢它帮我定位了那个 bug。
+
 ## License
 
 MIT

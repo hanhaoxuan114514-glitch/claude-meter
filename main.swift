@@ -10,27 +10,37 @@ import SwiftUI
 import AppKit
 import Security
 
-// MARK: - 凭证
+// MARK: - 配置读取
 
-enum Creds {
-    static let service = "com.claudemeter.credentials"
-    static let account = "sessionKey"
+/// 通用钥匙串读取：命中返回字符串，未配置或取不到返回 nil。
+func keychainString(service: String, account: String) -> String? {
+    let query: [CFString: Any] = [
+        kSecClass: kSecClassGenericPassword,
+        kSecAttrService: service,
+        kSecAttrAccount: account,
+        kSecReturnData: true,
+        kSecMatchLimit: kSecMatchLimitOne,
+    ]
+    var item: CFTypeRef?
+    guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+          let data = item as? Data else { return nil }
+    return String(decoding: data, as: UTF8.self)
+}
 
-    static func sessionKey() -> String? {
-        let q: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var out: AnyObject?
-        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess,
-              let d = out as? Data else { return nil }
-        return String(data: d, encoding: .utf8)
+enum Config {
+    static let keychainService = "com.claudemeter.credentials"
+    static let keychainAccount = "sessionKey"
+    static let orgIDKey = "org_id"
+
+    /// claude.ai 的会话 cookie 值，存在钥匙串里
+    static var sessionKey: String? {
+        keychainString(service: keychainService, account: keychainAccount)
     }
 
-    static var orgID: String? { UserDefaults.standard.string(forKey: "org_id") }
+    /// 组织 ID，非敏感，放 UserDefaults
+    static var orgID: String? {
+        UserDefaults.standard.string(forKey: orgIDKey)
+    }
 }
 
 // MARK: - 数据模型（只声明需要的字段，响应里其它 null 一律忽略）
@@ -45,16 +55,25 @@ struct Usage: Decodable {
     let seven_day: Limit?
 }
 
-// MARK: - 日期解析（claude.ai 用 6 位小数，带 .withFractionalSeconds 可解析）
+// MARK: - 时间解析
+//
+// claude.ai 的 resets_at 形如 "2026-09-29T19:59:59.556911+00:00"，小数秒位数不固定。
+// 与其反复试不同的 formatter，不如把小数秒整段丢掉再解析 —— 重置时间精确到秒够用了。
+
+private let isoSecondFormatter: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime]
+    return f
+}()
 
 func parseISO(_ s: String?) -> Date? {
     guard let s else { return nil }
-    let f = ISO8601DateFormatter()
-    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    if let d = f.date(from: s) { return d }
-    let g = ISO8601DateFormatter()
-    g.formatOptions = [.withInternetDateTime]
-    return g.date(from: s)
+    guard let dot = s.firstIndex(of: ".") else {
+        return isoSecondFormatter.date(from: s)
+    }
+    // "." 之后是小数秒，丢掉它，保留时区部分（+HH:MM / -HH:MM / Z）
+    let suffix = s[s.index(after: dot)...].drop { !"+-Z".contains($0) }
+    return isoSecondFormatter.date(from: String(s[..<dot]) + suffix)
 }
 
 // MARK: - 竖条绘制
@@ -119,17 +138,16 @@ final class Model: ObservableObject {
     }
 
     func refresh() async {
-        guard let sk = Creds.sessionKey(), let org = Creds.orgID else {
+        guard let sk = Config.sessionKey, let org = Config.orgID else {
             message = "凭证未配置"
             return
         }
         guard let url = URL(string: "https://claude.ai/api/organizations/\(org)/usage") else { return }
 
+        // 实测：这个接口只认会话 cookie，URLSession 自带的默认请求头就够了，
+        // 不需要额外设置 accept / content-type。
         var req = URLRequest(url: url)
         req.timeoutInterval = 20
-        req.setValue("*/*", forHTTPHeaderField: "accept")
-        req.setValue("application/json", forHTTPHeaderField: "content-type")
-        req.setValue("web_claude_ai", forHTTPHeaderField: "anthropic-client-platform")
         req.setValue("sessionKey=\(sk)", forHTTPHeaderField: "Cookie")
 
         busy = true
